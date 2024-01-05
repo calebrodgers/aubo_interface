@@ -10,7 +10,7 @@
 
 #include <memory>
 #include "rclcpp/rclcpp.hpp"
-#include "aubo_interface_msgs/msg/joint_angles.hpp"
+#include "aubo_interface_msgs/msg/arm_joints.hpp"
 
 #include "AuboRobotMetaType.h"
 #include "serviceinterface.h"
@@ -115,6 +115,34 @@ public:
         }
     }
 
+    // Max vel is 180deg/s, max acc is 180deg/s^2
+
+    void setJointMaxAcc(double joint0, double joint1, double joint2, double joint3, double joint4, double joint5)
+    {
+        /** Interface call: Set the maximum acceleration of the articulated motion ***/
+        aubo_robot_namespace::JointVelcAccParam jointMaxAcc;
+        jointMaxAcc.jointPara[0] = joint0 / 180.0 * M_PI;
+        jointMaxAcc.jointPara[1] = joint1 / 180.0 * M_PI;
+        jointMaxAcc.jointPara[2] = joint2 / 180.0 * M_PI;
+        jointMaxAcc.jointPara[3] = joint3 / 180.0 * M_PI;
+        jointMaxAcc.jointPara[4] = joint4 / 180.0 * M_PI;
+        jointMaxAcc.jointPara[5] = joint5 / 180.0 * M_PI; // The interface requires the unit to be radians
+        robotService.robotServiceSetGlobalMoveJointMaxAcc(jointMaxAcc);
+    }
+
+    void setJointMaxVel(double joint0, double joint1, double joint2, double joint3, double joint4, double joint5)
+    {
+        /** Interface call: Set the maximum acceleration of the articulated motion ***/
+        aubo_robot_namespace::JointVelcAccParam jointMaxVelc;
+        jointMaxVelc.jointPara[0] = joint0 / 180.0 * M_PI;
+        jointMaxVelc.jointPara[1] = joint1 / 180.0 * M_PI;
+        jointMaxVelc.jointPara[2] = joint2 / 180.0 * M_PI;
+        jointMaxVelc.jointPara[3] = joint3 / 180.0 * M_PI;
+        jointMaxVelc.jointPara[4] = joint4 / 180.0 * M_PI;
+        jointMaxVelc.jointPara[5] = joint5 / 180.0 * M_PI; // The interface requires the unit to be radians
+        robotService.robotServiceSetGlobalMoveJointMaxVelc(jointMaxVelc);
+    }
+
     double getJointAngles(int jointNum)
     {
         aubo_robot_namespace::JointStatus jointStatus[6];
@@ -145,7 +173,7 @@ private:
     AuboController *controller;
     void publish_message()
     {
-        auto message = aubo_interface_msgs::msg::JointAngles();
+        auto message = aubo_interface_msgs::msg::ArmJoints();
 
         message.joint0 = controller->getJointAngles(0);
         message.joint1 = controller->getJointAngles(1);
@@ -162,13 +190,13 @@ public:
         : Node("minimal_publisher"), count_(0)
     {
         controller = _controller;
-        publisher_ = this->create_publisher<aubo_interface_msgs::msg::JointAngles>("get_arm_joint_angles", 10);
+        publisher_ = this->create_publisher<aubo_interface_msgs::msg::ArmJoints>("get_arm_joint_angles", 10);
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(20),
             std::bind(&MinimalPublisher::publish_message, this));
     }
 
-    rclcpp::Publisher<aubo_interface_msgs::msg::JointAngles>::SharedPtr publisher_;
+    rclcpp::Publisher<aubo_interface_msgs::msg::ArmJoints>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
     size_t count_;
 };
@@ -180,24 +208,39 @@ class MinimalSubscriber : public rclcpp::Node
 
 private:
     AuboController *controller;
-    void subscriber_callback(const aubo_interface_msgs::msg::JointAngles::SharedPtr msg) const
+    std::string topic;
+    int type;
+    void subscriber_callback(const aubo_interface_msgs::msg::ArmJoints::SharedPtr msg) const
     {
-        controller->setJointAngles(msg->joint0 / 180.0 * M_PI, msg->joint1 / 180.0 * M_PI, msg->joint2 / 180.0 * M_PI, msg->joint3 / 180.0 * M_PI, msg->joint4 / 180.0 * M_PI, msg->joint5 / 180.0 * M_PI);
+        switch (type)
+        {
+        case 0:
+            controller->setJointAngles(msg->joint0 / 180.0 * M_PI, msg->joint1 / 180.0 * M_PI, msg->joint2 / 180.0 * M_PI, msg->joint3 / 180.0 * M_PI, msg->joint4 / 180.0 * M_PI, msg->joint5 / 180.0 * M_PI);
+            break;
+        case 1:
+            controller->setJointMaxAcc(msg->joint0, msg->joint1, msg->joint2, msg->joint3, msg->joint4, msg->joint5);
+            break;
+        case 2:
+            controller->setJointMaxVel(msg->joint0, msg->joint1, msg->joint2, msg->joint3, msg->joint4, msg->joint5);
+            break;
+        }
     }
 
 public:
-    MinimalSubscriber(AuboController *_controller)
+    MinimalSubscriber(AuboController *_controller, std::string _topic, int _type)
         : Node("minimal_subscriber")
     {
         controller = _controller;
-        subscription_ = this->create_subscription<aubo_interface_msgs::msg::JointAngles>(
-            "set_arm_joint_angles",
+        topic = _topic;
+        type = _type;
+        subscription_ = this->create_subscription<aubo_interface_msgs::msg::ArmJoints>(
+            topic,
             10,
             std::bind(&MinimalSubscriber::subscriber_callback, this, std::placeholders::_1));
         std::cout << "ROS Subscriber now listening" << std::endl;
     }
 
-    rclcpp::Subscription<aubo_interface_msgs::msg::JointAngles>::SharedPtr subscription_;
+    rclcpp::Subscription<aubo_interface_msgs::msg::ArmJoints>::SharedPtr subscription_;
 };
 
 /* MAIN */
@@ -213,18 +256,28 @@ int main(int argc, char *argv[])
 
     // Create instances of the publisher and subscriber
     auto publisher = std::make_shared<MinimalPublisher>(&aubo_i5);
-    auto subscriber = std::make_shared<MinimalSubscriber>(&aubo_i5);
+    auto angle_subscriber = std::make_shared<MinimalSubscriber>(&aubo_i5, "set_arm_joint_angles", 0);
+    auto acc_subscriber = std::make_shared<MinimalSubscriber>(&aubo_i5, "set_arm_joint_acc", 1);
+    auto vel_subscriber = std::make_shared<MinimalSubscriber>(&aubo_i5, "set_arm_joint_vel", 2);
 
     // Spin each node in a separate thread
     auto publisher_thread = std::make_shared<std::thread>([&]()
                                                           { rclcpp::spin(publisher); });
 
-    auto subscriber_thread = std::make_shared<std::thread>([&]()
-                                                           { rclcpp::spin(subscriber); });
+    auto angle_subscriber_thread = std::make_shared<std::thread>([&]()
+                                                                 { rclcpp::spin(angle_subscriber); });
+
+    auto acc_subscriber_thread = std::make_shared<std::thread>([&]()
+                                                               { rclcpp::spin(acc_subscriber); });
+
+    auto vel_subscriber_thread = std::make_shared<std::thread>([&]()
+                                                               { rclcpp::spin(vel_subscriber); });
 
     // Wait for both threads to finish
     publisher_thread->join();
-    subscriber_thread->join();
+    angle_subscriber_thread->join();
+    acc_subscriber_thread->join();
+    vel_subscriber_thread->join();
 
     aubo_i5.shutdownAndLogout();
 

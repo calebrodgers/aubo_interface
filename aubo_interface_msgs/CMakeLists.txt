@@ -34,7 +34,7 @@ if(BUILD_TESTING)
 endif()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/JointAngles.msg"
+  "msg/ArmJoints.msg"
 )
 
 ament_package()
