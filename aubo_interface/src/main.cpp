@@ -108,7 +108,7 @@ public:
         /** Waypoint 1 movement **/
         double jointAngle[aubo_robot_namespace::ARM_DOF] = {0};
         Util::initJointAngleArray(jointAngle, joint0, joint1, joint2, joint3, joint4, joint5);
-        robotService.robotServiceJointMove(jointAngle, true);
+        robotService.robotServiceJointMove(jointAngle, false);
         if (ret != aubo_robot_namespace::InterfaceCallSuccCode)
         {
             std::cerr << "Movement to waypoint 1 failed.　ret:" << ret << std::endl;
